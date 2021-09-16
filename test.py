@@ -1,97 +1,174 @@
-from flask import Flask
+from flask import Flask, request, jsonify
+from firebase_admin import messaging
+import firebase_admin
+from firebase_admin import credentials
 import boto3
-from dotenv import load_dotenv
+import json
+from googleapiclient import http
+import requests
+import psycopg2
+import psycopg2.extras
+from dotenv import load_dotenv 
 load_dotenv()
-app=Flask(__name__)
-@app.route('/')
+app=Flask(_name_)
+client = boto3.client('cognito-idp', region_name='ap-south-1')
+ClientId="5kdffi1qcpalk6ubac6nqp7gro"
+cred=credentials.Certificate('/home/ubuntu/serviceaccount.json')
+
+Database_url="postgres://smartbus_admin:iota2020@smart-bus02.cyfqca490urm.ap-south-1.rds.amazonaws.com:5432/postgres"
+SSL_mode="require"
+
+
+@app.route('/postgre', methods=["GET", "POST"])
+def postgre():
+       conn=psycopg2.connect(Database_url,sslmode=SSL_mode)
+       cur=conn.cursor()
+       cur.execute("SELECT notification from stations where id=1002")
+       a=cur.fetchall()
+       print(a)
+       cur.close()
+       conn.close()
+
+       return "true"
+
+       
+
+@app.route('/signup', methods=["GET", "POST"])
 def signup():
-   username = 'aa7995@srmist.edu.in'
-   password = 'Amish123@'
+   try:
+      content = json.loads(request.data)
+      response = client.sign_up(
+         ClientId=ClientId,
+         Username=content['email'],
+         Password=content['password'],
+      )
+      return "True"
+   except client.exceptions.UsernameExistsException:
+        return 'email Already Exists!'
+   except client.exceptions.InvalidPasswordException as e:
+        return ("Password validation error: the password should have an upper case, a lower case & a special character")
+        
+   except Exception as e:
+        
+        return str(e)
 
-   client = boto3.client('cognito-idp', region_name='ap-south-1')
-   response = client.sign_up(
-      ClientId="7911ht17hg4t102ttseql68lm3",
-      Username=username,
-      Password=password,
-   )
-   return response
-@app.route('/resend_confirmation')
+   
+@app.route('/resend_confirmation',methods=["GET", "POST"])
 def resend_confirmation():
-  username = 'aa7995@srmist.edu.in'
+  content = json.loads(request.data)
 
-  client = boto3.client('cognito-idp', region_name='ap-south-1')
   response = client.resend_confirmation_code(
-    ClientId="7911ht17hg4t102ttseql68lm3",
-    Username=username,
+      ClientId=ClientId,
+      Username=content['username'],
    )
   return response
 
-@app.route('/login')
+@app.route('/login', methods=[ "POST"])
 def login():
-   username = 'aa7995@srmist.edu.in'
-   password = 'Amish1234@'
+   try:
+      content = json.loads(request.data)
+      print(content)
+      response = client.initiate_auth(
+      ClientId=ClientId,   
+      AuthFlow='USER_PASSWORD_AUTH',
+      AuthParameters={
+         'USERNAME': content['username'],
+         'PASSWORD': content['password'],
+         }
+      )
+      
+      return {"result":"true"}
 
-   client = boto3.client('cognito-idp', region_name='ap-south-1')
-   response = client.initiate_auth(
-    ClientId="7911ht17hg4t102ttseql68lm3",
-    AuthFlow='USER_PASSWORD_AUTH',
-    AuthParameters={
-        'USERNAME': username,
-        'PASSWORD': password
-      }
-    )
-   return response
-@app.route('/forgot_password')
+   except client.exceptions.UserNotConfirmedException:
+      return 'User is not confirmed. Please check your mail.'
+   except client.exceptions.UserNotFoundException:
+      return 'User does not exist. Check again.'
+   except client.exceptions.NotAuthorizedException:
+      return 'Username/Password is incorrect'
+   except Exception as e:
+      print(str(e)+"exception")
+      return str(e)
+   
+@app.route('/forgot_password',methods=["POST"])
 def forgot_password():
-   username = 'aa7995@srmist.edu.in'
-
-   client = boto3.client('cognito-idp', region_name='ap-south-1')
+   content = json.loads(request.data)
    response = client.forgot_password(
-     ClientId="7911ht17hg4t102ttseql68lm3",
-     Username=username
+     ClientId=ClientId, 
+     Username=content['username'],
      )
 
    return response
-@app.route('/confirm_forgot_password')
+@app.route('/confirm_forgot_password',methods=["POST"])
 def confirm_forgot_password():
-   username = 'aa7995@srmist.edu.in'
-   confirm_code = '528010'
-   password = 'Amish12@'
+   content = json.loads(request.data)
 
-   client = boto3.client('cognito-idp', region_name='ap-south-1')
    response = client.confirm_forgot_password(
-    ClientId="7911ht17hg4t102ttseql68lm3",
-    Username=username,
-    ConfirmationCode=confirm_code,
-    Password=password
+    ClientId=ClientId,  
+    Username=content['username'],
+    ConfirmationCode=content['code'],
+    Password=content['password']
    )
 
    return response
-@app.route('/change_password')
+@app.route('/change_password',methods=[ "POST"])
 def change_password():
-   access_token = 'eyJraWQiOiI2bThnR3k3aHZHTEhpbEV1MzUwdzlLYUtqS1c0d05VbFJDdlJCRHp6cmxrPSIsImFsZyI6IlJTMjU2In0.eyJzdWIiOiI2NWNmN2RjYy1kMDVjLTQ4NDUtYmE5Ny01YmExYTA4OWFkMmEiLCJldmVudF9pZCI6IjJmMTM3NjBmLTNlNjctNDc1ZC05NDJjLTQ0ZGQ0OTRlYTRmNCIsInRva2VuX3VzZSI6ImFjY2VzcyIsInNjb3BlIjoiYXdzLmNvZ25pdG8uc2lnbmluLnVzZXIuYWRtaW4iLCJhdXRoX3RpbWUiOjE2MTY0NDM3MTUsImlzcyI6Imh0dHBzOlwvXC9jb2duaXRvLWlkcC5hcC1zb3V0aC0xLmFtYXpvbmF3cy5jb21cL2FwLXNvdXRoLTFfaFhHeWVpTmlhIiwiZXhwIjoxNjE2NDQ3MzE1LCJpYXQiOjE2MTY0NDM3MTUsImp0aSI6ImVhYzI2NDA0LWM3OTctNDYyMi1iZjAxLTlmMjk4NTVmMzA3YSIsImNsaWVudF9pZCI6Ijc5MTFodDE3aGc0dDEwMnR0c2VxbDY4bG0zIiwidXNlcm5hbWUiOiI2NWNmN2RjYy1kMDVjLTQ4NDUtYmE5Ny01YmExYTA4OWFkMmEifQ.LDLtvdJuRCERLcvMN1qQq6UeDtSUVKauh4CVItkpxzmOKvkV8HjfQtqxEYz5kovErP8bjyV0GUVe8dcl2VgwayBOqUiCxCUjAt76Ap1yrHNfiS4GJt-X1OGuWj88x0bD8hHVzRqI0o6d2zyUPe70kJcOt6oYjzoNxFfTScdEZNvwsAXyVlcyFzeCZm470VqvIH_slTGuV5p2P0IMpGWDBy_W3aS--7OUZgsQpk-K_unYLMEKgN3xlvDfClawRHObEW9ikLznhelY8q7MDGNx9EAzO0VpXhZKY3rSgVe8mYvSdbrmSSZyOJow5W63FkT8ryoRkpAZIW6-kEwpqRepNw'
-   previous_password = 'Amish12@'
-   new_password = 'Amish1234@'
+   content = json.loads(request.data)
 
-   client = boto3.client('cognito-idp', region_name='ap-south-1')
    response = client.change_password(
-       PreviousPassword=previous_password,
-       ProposedPassword=new_password,
-       AccessToken=access_token
+       PreviousPassword=content['previousPassword'],
+       ProposedPassword=content['newPassword'],
+       AccessToken=content['accessToken']
    ) 
 
    return response
-@app.route('/logout')
+@app.route('/logout',methods=["POST"])
 def logout():
-   access_token = 'eyJraWQiOiI2bThnR3k3aHZHTEhpbEV1MzUwdzlLYUtqS1c0d05VbFJDdlJCRHp6cmxrPSIsImFsZyI6IlJTMjU2In0.eyJzdWIiOiI2NWNmN2RjYy1kMDVjLTQ4NDUtYmE5Ny01YmExYTA4OWFkMmEiLCJldmVudF9pZCI6IjA1ZjRkOWVhLWZkMWYtNDlhNS1iYWQxLTE3N2RlYjA3MjM4OSIsInRva2VuX3VzZSI6ImFjY2VzcyIsInNjb3BlIjoiYXdzLmNvZ25pdG8uc2lnbmluLnVzZXIuYWRtaW4iLCJhdXRoX3RpbWUiOjE2MTY0ODM5MjksImlzcyI6Imh0dHBzOlwvXC9jb2duaXRvLWlkcC5hcC1zb3V0aC0xLmFtYXpvbmF3cy5jb21cL2FwLXNvdXRoLTFfaFhHeWVpTmlhIiwiZXhwIjoxNjE2NDg3NTI5LCJpYXQiOjE2MTY0ODM5MjksImp0aSI6IjdmNjdhOTExLWYzY2YtNDgxZC04ODQ1LTY0NTQ1ODc4MjUyNyIsImNsaWVudF9pZCI6Ijc5MTFodDE3aGc0dDEwMnR0c2VxbDY4bG0zIiwidXNlcm5hbWUiOiI2NWNmN2RjYy1kMDVjLTQ4NDUtYmE5Ny01YmExYTA4OWFkMmEifQ.KVY47ySUN-w4bYrwc8o2K_ZUiUjUjwNnwlZWFedurwZrQv8xzbCFBaprY7pFfOiDZFGkLZ0_hFHsY6IyZEns3xQf9wdq6K6ivLB7u5i8VfDsk4mLqieYXlFRE-fddKmuMcHMA7xs_NUNiw3eFHbrarJ8Xh5l_ayxSn7FhJAsyVOQQXRxbWEUewlT0u9Q9WsVJuDOXW9T4kQkdnpiAI9VGSdl0wHGTtWEwgRlRp1hRCHtLn7HCapRnISB4GEidwdgt4AQLOK0L2ITuM_BThOfJhAmC56ghcZyxH1m68llqdnjWwQMkB8p4qKdwt4cQ8-8Gvt-13jnhA7EfvQ_tZhNvg'
-   client = boto3.client('cognito-idp', region_name='ap-south-1')
+   content = json.loads(request.data)
    response=client.global_sign_out(
-      AccessToken=access_token
+      AccessToken=content['AccessToken']
    )
    return response
 
 
+@app.route('/subscribe',methods=["GET", "POST"])
+def subscribe():
+   content = json.loads(request.data)
+   registration_token=content["appid"]
+   topic=content["topic"]
+   firebase_admin.initialize_app(cred)
+   response = messaging.subscribe_to_topic(registration_token, topic)
+   
+   print(response.success_count, 'tokens were subscribed successfully')
+   return "TRUE"
 
 
-if __name__=="__main__":
-    app.run()
+@app.route('/unsubscribe',methods=["GET", "POST"])
+def unsubscribe():
+   content = json.loads(request.data)
+   registration_token=content["appid"]
+   topic=content["topic"]
+   firebase_admin.initialize_app(cred)
+   response = messaging.unsubscribe_from_topic(registration_token, topic)
+   print(response.success_count, 'tokens were unsubscribed successfully')
+   return "True"
+
+
+@app.route('/notifaction',methods=["GET", "POST"])
+def notifaction():
+       topic = 'highScores'
+       message = messaging.Message(
+          data='req',
+          topic=topic,
+       )
+       response = messaging.send(message)
+       print('Successfully sent message:', response)
+        
+       
+      
+
+
+
+
+
+if _name=="main_":
+    app.run(debug=True, host='0.0.0.0')
